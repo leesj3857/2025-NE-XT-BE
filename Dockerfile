@@ -7,6 +7,9 @@ WORKDIR /app
 # Copy project files into the container
 COPY . .
 
+# 🔥 여기에 실행 권한을 부여
+RUN chmod +x gradlew
+
 # Build the project without running tests
 RUN ./gradlew build -x test
 
