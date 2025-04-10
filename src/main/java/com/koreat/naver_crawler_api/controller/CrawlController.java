@@ -6,7 +6,6 @@ import org.springframework.http.ResponseEntity;
 import java.io.*;
 import java.util.*;
 
-@CrossOrigin(origins = "http://localhost:5173")
 @RestController
 public class CrawlController {
 
