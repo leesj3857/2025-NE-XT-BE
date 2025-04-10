@@ -1,4 +1,4 @@
-package com.example.navercrawlerapi.config;
+package com.koreat.naver_crawler_api.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

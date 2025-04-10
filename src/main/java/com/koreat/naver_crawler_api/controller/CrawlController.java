@@ -1,4 +1,4 @@
-package com.example.navercrawlerapi.controller;
+package com.koreat.naver_crawler_api.controller;
 
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
