@@ -13,9 +13,9 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 def crawl_naver_place_info(keyword):
     options = webdriver.ChromeOptions()
-    # options.add_argument("--headless=new")
-    # options.add_argument("--no-sandbox")
-    # options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     # options.add_argument("--blink-settings=imagesEnabled=false")
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
@@ -45,7 +45,7 @@ def crawl_naver_place_info(keyword):
     try:
         wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "entryIframe")))
     except:
-        print("entryIframe 진입 실패", file=sys.stderr)
+        print("entryIframe 진입 실패", e, file=sys.stderr)
         driver.quit()
         return
 
@@ -85,7 +85,7 @@ def crawl_naver_place_info(keyword):
                 "price": price.text.strip()
             })
     except Exception as e:
-        print("❌ 메뉴 추출 실패:", e)
+        print("❌ 메뉴 추출 실패:", e, file=sys.stderr)
     
     
     try:
@@ -113,7 +113,6 @@ def crawl_naver_place_info(keyword):
     # 리뷰 탭 클릭
     try:
         review_tabs = driver.find_elements(By.CSS_SELECTOR, ".veBoZ")
-        print(review_tabs,'리뷰탭')
         for tab in review_tabs:
             if tab.text.strip() == "리뷰":
                 tab.click()
