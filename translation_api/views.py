@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.conf import settings
 from .models import Category, RegionName, CategoryLog, RegionLog
 import requests
-
+from django.db.utils import ProgrammingError, OperationalError
 
 DEEPL_URL = 'https://api-free.deepl.com/v2/translate'
 DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
@@ -17,9 +17,11 @@ def run_migrate(request):
         call_command('makemigrations', interactive=False)
         call_command('migrate', interactive=False)
         return Response({'message': 'Migration completed successfully'})
+    except (ProgrammingError, OperationalError) as db_error:
+        return Response({'message': 'Migration partially completed or already applied', 'details': str(db_error)}, status=200)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
-
+    
 
 def deepl_translate(text: str, source_lang: str, target_lang: str) -> str:
     """ Deepl API 호출 함수 """
