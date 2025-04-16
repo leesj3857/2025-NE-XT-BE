@@ -1,8 +1,18 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from django.core.management import call_command
+import os
 from .models import Category
 import requests
 from django.conf import settings
+
+@api_view(['POST'])
+def run_migrate(request):
+    try:
+        call_command('migrate', interactive=False)
+        return Response({'message': 'Migration completed successfully'})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
 @api_view(['POST'])
 def translate_category(request):

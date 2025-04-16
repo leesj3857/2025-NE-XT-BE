@@ -3,4 +3,5 @@ from .views import translate_category
 
 urlpatterns = [
     path('translate/', translate_category, name='translate_category'),  # ✅ 경로 일치
+    path('migrate/', run_migrate),
 ]
