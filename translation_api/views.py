@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.core.management import call_command
 from django.conf import settings
-from .models import Category, RegionName
+from .models import Category, RegionName, CategoryLog, RegionLog
 import requests
 
 
@@ -45,7 +45,9 @@ def translate_category(request):
     text = request.data.get('text')
     if not text:
         return Response({'error': 'Missing text field'}, status=400)
-
+    
+    CategoryLog.objects.create(korean=text)
+    
     try:
         category = Category.objects.get(korean=text)
         return Response({'translated_text': category.english})
@@ -66,7 +68,9 @@ def translate_region_to_korean(request):
     text = request.data.get('text')
     if not text:
         return Response({'error': 'Missing text field'}, status=400)
-
+    
+    RegionLog.objects.create(english=text)
+    
     try:
         region = RegionName.objects.get(english=text)
         return Response({'translated_text': region.korean})
