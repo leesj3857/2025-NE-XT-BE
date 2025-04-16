@@ -12,13 +12,10 @@ DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
 
 @api_view(['POST'])
 def run_migrate(request):
-    """ DB 마이그레이션 수동 실행용 """
     try:
-        call_command('makemigrations', interactive=False)
+        call_command('makemigrations', 'translation_api', interactive=False)
         call_command('migrate', interactive=False)
         return Response({'message': 'Migration completed successfully'})
-    except (ProgrammingError, OperationalError) as db_error:
-        return Response({'message': 'Migration partially completed or already applied', 'details': str(db_error)}, status=200)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
     
