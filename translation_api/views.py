@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.core.management import call_command
 from django.conf import settings
-from .models import Category, RegionName, CategoryLog, RegionLog, PlaceInfo, PlaceLog 
+from .models import Category, RegionName, CategoryLog, RegionLog, PlaceInfo, PlaceLog, User, EmailVerification
 import requests
 from django.db.utils import ProgrammingError, OperationalError
 from django.db import IntegrityError
@@ -13,6 +13,7 @@ from .serializers import RegisterSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 import random
 from django.core.mail import EmailMessage
+from django.utils import timezone
 
 DEEPL_URL = 'https://api-free.deepl.com/v2/translate'
 DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
@@ -211,8 +212,6 @@ def check_email_duplicate(request):
         return Response({"exists": True})
     return Response({"exists": False})
 
-email_verification_codes = {}  # 메모리 기반 저장 (운영에서는 Redis 등 사용 권장)
-
 @api_view(['POST'])
 def send_verification_code(request):
     email = request.data.get('email')
@@ -224,18 +223,22 @@ def send_verification_code(request):
         return Response({'error': '이미 가입된 이메일입니다.'}, status=409)
 
     code = str(random.randint(100000, 999999))
-    email_verification_codes[email] = code
 
-    email_subject = '[회원가입 인증] 이메일 인증번호입니다.'
-    email_body = f'인증번호: {code}'
+    # 기존 인증 요청이 있으면 삭제
+    EmailVerification.objects.filter(email=email, purpose='register').delete()
+
+    # 인증 코드 새로 생성
+    EmailVerification.objects.create(email=email, code=code, purpose='register')
+
+    subject = '[회원가입 인증] 이메일 인증번호입니다.'
+    body = f'인증번호: {code} (5분 내 입력)'
 
     try:
-        email_msg = EmailMessage(subject=email_subject, body=email_body, to=[email])
-        email_msg.send()
+        EmailMessage(subject=subject, body=body, to=[email]).send()
         return Response({'message': '인증번호가 이메일로 전송되었습니다.'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
-    
+
 @api_view(['POST'])
 def verify_email_code(request):
     email = request.data.get('email')
@@ -244,11 +247,19 @@ def verify_email_code(request):
     if not email or not code:
         return Response({'error': '이메일과 인증번호를 입력해주세요.'}, status=400)
 
-    if email_verification_codes.get(email) == code:
-        return Response({'message': '인증에 성공했습니다.'})
-    else:
-        return Response({'error': '인증번호가 올바르지 않습니다.'}, status=400)
-    
+    try:
+        record = EmailVerification.objects.filter(email=email, purpose='register').latest('created_at')
+    except EmailVerification.DoesNotExist:
+        return Response({'error': '인증 요청 기록이 없습니다.'}, status=404)
+
+    if record.is_expired():
+        return Response({'error': '인증번호가 만료되었습니다.'}, status=400)
+
+    if record.code != code:
+        return Response({'error': '인증번호가 일치하지 않습니다.'}, status=400)
+
+    return Response({'message': '이메일 인증 성공!'})
+
 @api_view(['POST'])
 def send_password_reset_code(request):
     email = request.data.get('email')
@@ -256,14 +267,18 @@ def send_password_reset_code(request):
         return Response({'error': '해당 이메일로 가입된 사용자가 없습니다.'}, status=404)
 
     code = str(random.randint(100000, 999999))
-    email_verification_codes[email] = code
 
-    subject = '[비밀번호 찾기] 인증번호입니다.'
-    body = f'아래 인증번호를 입력해주세요.\n\n인증번호: {code}'
-    
+    # 기존 인증 요청 삭제
+    EmailVerification.objects.filter(email=email, purpose='reset').delete()
+
+    EmailVerification.objects.create(email=email, code=code, purpose='reset')
+
+    subject = '[비밀번호 재설정] 인증번호입니다.'
+    body = f'인증번호: {code} (5분 내 입력)'
+
     try:
         EmailMessage(subject=subject, body=body, to=[email]).send()
-        return Response({'message': '인증번호가 전송되었습니다.'})
+        return Response({'message': '비밀번호 재설정용 인증번호가 이메일로 전송되었습니다.'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -276,14 +291,25 @@ def reset_password(request):
     if not all([email, code, new_password]):
         return Response({'error': '모든 정보를 입력해주세요.'}, status=400)
 
-    if email_verification_codes.get(email) != code:
+    try:
+        record = EmailVerification.objects.filter(email=email, purpose='reset').latest('created_at')
+    except EmailVerification.DoesNotExist:
+        return Response({'error': '비밀번호 재설정 요청 기록이 없습니다.'}, status=404)
+
+    if record.is_expired():
+        return Response({'error': '인증번호가 만료되었습니다.'}, status=400)
+
+    if record.code != code:
         return Response({'error': '인증번호가 일치하지 않습니다.'}, status=400)
 
     try:
         user = User.objects.get(email=email)
         user.set_password(new_password)
         user.save()
-        del email_verification_codes[email]
+
+        # 성공 후 인증기록 삭제
+        record.delete()
+
         return Response({'message': '비밀번호가 성공적으로 변경되었습니다.'})
     except User.DoesNotExist:
         return Response({'error': '사용자를 찾을 수 없습니다.'}, status=404)
