@@ -23,6 +23,6 @@ urlpatterns = [
     path('email/send-code/', send_verification_code),
     path('email/verify-code/', verify_email_code),
     path('password/send-reset-code/', send_password_reset_code),
-    path('password/verify_reset_code/', send_password_reset_code),
+    path('password/verify_reset_code/', verify_reset_code),
     path('password/reset/', reset_password),
 ]
