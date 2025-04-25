@@ -184,9 +184,27 @@ User = get_user_model()
 
 @api_view(['POST'])
 def register(request):
+    email = request.data.get('email')
+    name = request.data.get('name')
+    password = request.data.get('password')
+    token = request.data.get('token')
+
+    if not all([email, name, password, token]):
+        return Response({'error': '모든 정보를 입력해주세요.'}, status=400)
+
+    try:
+        record = EmailVerification.objects.filter(email=email, purpose='register').latest('created_at')
+    except EmailVerification.DoesNotExist:
+        return Response({'error': '이메일 인증 기록이 없습니다.'}, status=404)
+
+    if record.token != token:
+        return Response({'error': '유효하지 않은 토큰입니다.'}, status=400)
+
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
+        # ✅ 회원가입 완료 후 인증 기록 삭제
+        record.delete()
         return Response({"message": "회원가입 성공!"})
     return Response(serializer.errors, status=400)
 
@@ -269,7 +287,12 @@ def verify_email_code(request):
     if record.code != code:
         return Response({'error': '인증번호가 일치하지 않습니다.'}, status=400)
 
-    return Response({'message': '이메일 인증 성공!'})
+    # ✅ 인증 성공: 일회용 토큰 발급
+    one_time_token = secrets.token_urlsafe(32)
+    record.token = one_time_token
+    record.save()
+
+    return Response({'message': '이메일 인증 성공', 'token': one_time_token})
 
 # 1. 비밀번호 재설정용 인증번호 전송
 @api_view(['POST'])
