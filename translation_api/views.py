@@ -11,6 +11,8 @@ from serpapi import GoogleSearch
 from django.contrib.auth import authenticate, get_user_model
 from .serializers import RegisterSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+import random
+from django.core.mail import EmailMessage
 
 DEEPL_URL = 'https://api-free.deepl.com/v2/translate'
 DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
@@ -208,3 +210,80 @@ def check_email_duplicate(request):
     if User.objects.filter(email=email).exists():
         return Response({"exists": True})
     return Response({"exists": False})
+
+email_verification_codes = {}  # 메모리 기반 저장 (운영에서는 Redis 등 사용 권장)
+
+@api_view(['POST'])
+def send_verification_code(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({'error': '이메일이 필요합니다.'}, status=400)
+
+    # 중복 이메일 검사
+    if User.objects.filter(email=email).exists():
+        return Response({'error': '이미 가입된 이메일입니다.'}, status=409)
+
+    code = str(random.randint(100000, 999999))
+    email_verification_codes[email] = code
+
+    email_subject = '[회원가입 인증] 이메일 인증번호입니다.'
+    email_body = f'인증번호: {code}'
+
+    try:
+        email_msg = EmailMessage(subject=email_subject, body=email_body, to=[email])
+        email_msg.send()
+        return Response({'message': '인증번호가 이메일로 전송되었습니다.'})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+    
+@api_view(['POST'])
+def verify_email_code(request):
+    email = request.data.get('email')
+    code = request.data.get('code')
+
+    if not email or not code:
+        return Response({'error': '이메일과 인증번호를 입력해주세요.'}, status=400)
+
+    if email_verification_codes.get(email) == code:
+        return Response({'message': '인증에 성공했습니다.'})
+    else:
+        return Response({'error': '인증번호가 올바르지 않습니다.'}, status=400)
+    
+@api_view(['POST'])
+def send_password_reset_code(request):
+    email = request.data.get('email')
+    if not User.objects.filter(email=email).exists():
+        return Response({'error': '해당 이메일로 가입된 사용자가 없습니다.'}, status=404)
+
+    code = str(random.randint(100000, 999999))
+    email_verification_codes[email] = code
+
+    subject = '[비밀번호 찾기] 인증번호입니다.'
+    body = f'아래 인증번호를 입력해주세요.\n\n인증번호: {code}'
+    
+    try:
+        EmailMessage(subject=subject, body=body, to=[email]).send()
+        return Response({'message': '인증번호가 전송되었습니다.'})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+def reset_password(request):
+    email = request.data.get('email')
+    code = request.data.get('code')
+    new_password = request.data.get('new_password')
+
+    if not all([email, code, new_password]):
+        return Response({'error': '모든 정보를 입력해주세요.'}, status=400)
+
+    if email_verification_codes.get(email) != code:
+        return Response({'error': '인증번호가 일치하지 않습니다.'}, status=400)
+
+    try:
+        user = User.objects.get(email=email)
+        user.set_password(new_password)
+        user.save()
+        del email_verification_codes[email]
+        return Response({'message': '비밀번호가 성공적으로 변경되었습니다.'})
+    except User.DoesNotExist:
+        return Response({'error': '사용자를 찾을 수 없습니다.'}, status=404)
