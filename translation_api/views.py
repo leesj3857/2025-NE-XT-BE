@@ -16,11 +16,14 @@ DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
 @api_view(['POST'])
 def run_migrate(request):
     try:
-        call_command('makemigrations', 'translation_api', interactive=False)
-        call_command('migrate', 'translation_api', interactive=False, fake_initial=True)
-        return Response({'message': 'Migration completed with fake_initial'})
+        # 마이그레이션 롤백
+        call_command('migrate', 'translation_api', '0001', interactive=False)
+        # 마이그레이션 재적용
+        call_command('migrate', 'translation_api', interactive=False)
+        return Response({'message': 'Re-migration applied correctly'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
 
     
 
