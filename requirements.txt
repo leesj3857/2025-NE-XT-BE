@@ -12,3 +12,4 @@ sqlparse==0.5.3
 tzdata==2025.2
 urllib3==2.4.0
 gunicorn==21.2.0
+serpapi==0.1.4
