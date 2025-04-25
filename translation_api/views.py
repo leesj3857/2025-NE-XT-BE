@@ -2,9 +2,10 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.core.management import call_command
 from django.conf import settings
-from .models import Category, RegionName, CategoryLog, RegionLog
+from .models import Category, RegionName, CategoryLog, RegionLog, PlaceInfo, PlaceLog 
 import requests
 from django.db.utils import ProgrammingError, OperationalError
+from django.db import IntegrityError
 import re
 from serpapi import GoogleSearch
 
@@ -93,40 +94,66 @@ def get_place_info(request):
     if not name or not address:
         return Response({'error': 'Missing name or address'}, status=400)
 
-    query = f"{name} {address}"
-    params = {
-        "engine": "google_maps",
-        "q": query,
-        "type": "search",
-        "api_key": settings.SERPAPI_KEY
-    }
+    # 로그 저장
+    PlaceLog.objects.create(name=name, address=address)
 
     try:
-        search = GoogleSearch(params)
-        result = search.get_dict()
+        # DB에 이미 존재하는지 확인
+        place = PlaceInfo.objects.get(name=name, address=address)
+        return Response({
+            "title": place.title,
+            "category": place.category,
+            "address": place.address,
+            "description": place.description,
+            "menu_or_ticket_info": place.menu_or_ticket_info,
+            "price": place.price,
+            "translated_reviews": place.translated_reviews,
+        })
 
-        # 주요 정보 추출
-        place_info = result.get("place_results", {})
-        reviews = place_info.get("reviews", [])
-
-        # 한국어 후기를 영어로 번역
-        korean_reviews = [r["text"] for r in reviews if re.search(r"[가-힣]", r.get("text", ""))]
-        translated_reviews = [
-            deepl_translate(text, source_lang="KO", target_lang="EN")
-            for text in korean_reviews
-        ]
-
-        response_data = {
-            "title": place_info.get("title"),
-            "category": place_info.get("type"),
-            "address": place_info.get("address"),
-            "description": place_info.get("description"),
-            "menu_or_ticket_info": place_info.get("menu") if "menu" in place_info else place_info.get("attributes", {}),
-            "price": place_info.get("price_level"),
-            "translated_reviews": translated_reviews,
+    except PlaceInfo.DoesNotExist:
+        # SERP API 호출
+        query = f"{name} {address}"
+        params = {
+            "engine": "google_maps",
+            "q": query,
+            "type": "search",
+            "api_key": settings.SERPAPI_KEY
         }
 
-        return Response(response_data)
+        try:
+            search = GoogleSearch(params)
+            result = search.get_dict()
+            place_info = result.get("place_results", {})
+            reviews = place_info.get("reviews", [])
 
-    except Exception as e:
-        return Response({'error': str(e)}, status=500)
+            # 한국어 후기만 추출하고 번역
+            korean_reviews = [r["text"] for r in reviews if re.search(r"[가-힣]", r.get("text", ""))]
+            translated_reviews = [
+                deepl_translate(text, source_lang="KO", target_lang="EN")
+                for text in korean_reviews
+            ]
+
+            # DB 저장
+            place = PlaceInfo.objects.create(
+                name=name,
+                address=address,
+                title=place_info.get("title"),
+                category=place_info.get("type"),
+                description=place_info.get("description"),
+                menu_or_ticket_info=place_info.get("menu") if "menu" in place_info else place_info.get("attributes", {}),
+                price=place_info.get("price_level"),
+                translated_reviews=translated_reviews,
+            )
+
+            return Response({
+                "title": place.title,
+                "category": place.category,
+                "address": place.address,
+                "description": place.description,
+                "menu_or_ticket_info": place.menu_or_ticket_info,
+                "price": place.price,
+                "translated_reviews": place.translated_reviews,
+            })
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
