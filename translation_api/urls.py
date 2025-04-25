@@ -5,5 +5,5 @@ urlpatterns = [
     path('translate/', translate_category, name='translate_category'),  # ✅ 경로 일치
     path('migrate/', run_migrate),
     path('translate/region/', translate_region_to_korean),
-    path('place-info/', get_place_info, name='get_place_info'),
+    path('place-info/', get_place_info, name='get_place_info')
 ]

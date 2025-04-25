@@ -123,6 +123,8 @@ def get_place_info(request):
             "engine": "google_maps",
             "q": query,
             "type": "search",
+            "google_domain": "google.co.kr",
+            "hl": "ko",
             "api_key": settings.SERPAPI_KEY
         }
 
@@ -163,3 +165,4 @@ def get_place_info(request):
 
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+        
