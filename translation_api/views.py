@@ -5,11 +5,13 @@ from django.conf import settings
 from .models import Category, RegionName, CategoryLog, RegionLog
 import requests
 from django.db.utils import ProgrammingError, OperationalError
+import re
+from serpapi import GoogleSearch
 
 DEEPL_URL = 'https://api-free.deepl.com/v2/translate'
 DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
 
-
+        
 @api_view(['POST'])
 def run_migrate(request):
     try:
@@ -80,5 +82,51 @@ def translate_region_to_korean(request):
         translated = deepl_translate(text, source_lang='EN', target_lang='KO')
         RegionName.objects.create(korean=translated, english=text)
         return Response({'translated_text': translated})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+def get_place_info(request):
+    name = request.data.get('name')
+    address = request.data.get('address')
+
+    if not name or not address:
+        return Response({'error': 'Missing name or address'}, status=400)
+
+    query = f"{name} {address}"
+    params = {
+        "engine": "google_maps",
+        "q": query,
+        "type": "search",
+        "api_key": settings.SERPAPI_KEY
+    }
+
+    try:
+        search = GoogleSearch(params)
+        result = search.get_dict()
+
+        # 주요 정보 추출
+        place_info = result.get("place_results", {})
+        reviews = place_info.get("reviews", [])
+
+        # 한국어 후기를 영어로 번역
+        korean_reviews = [r["text"] for r in reviews if re.search(r"[가-힣]", r.get("text", ""))]
+        translated_reviews = [
+            deepl_translate(text, source_lang="KO", target_lang="EN")
+            for text in korean_reviews
+        ]
+
+        response_data = {
+            "title": place_info.get("title"),
+            "category": place_info.get("type"),
+            "address": place_info.get("address"),
+            "description": place_info.get("description"),
+            "menu_or_ticket_info": place_info.get("menu") if "menu" in place_info else place_info.get("attributes", {}),
+            "price": place_info.get("price_level"),
+            "translated_reviews": translated_reviews,
+        }
+
+        return Response(response_data)
+
     except Exception as e:
         return Response({'error': str(e)}, status=500)

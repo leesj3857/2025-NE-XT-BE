@@ -27,6 +27,7 @@ DATABASES = {
     }
 }
 
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 DEEPL_API_KEY = os.getenv("DEEPL_API_KEY")
 
 DEBUG = True
