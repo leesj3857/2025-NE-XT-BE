@@ -16,11 +16,13 @@ DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
 @api_view(['POST'])
 def run_migrate(request):
     try:
-        # 마이그레이션 롤백
-        call_command('migrate', 'translation_api', '0001', interactive=False)
-        # 마이그레이션 재적용
+        # 마이그레이션 파일 생성 (필요 시)
+        call_command('makemigrations', 'translation_api', interactive=False)
+
+        # migrate 수행 (새로운 테이블만 생성)
         call_command('migrate', 'translation_api', interactive=False)
-        return Response({'message': 'Re-migration applied correctly'})
+
+        return Response({'message': 'Migration applied successfully'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
