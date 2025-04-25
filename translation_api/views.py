@@ -8,6 +8,9 @@ from django.db.utils import ProgrammingError, OperationalError
 from django.db import IntegrityError
 import re
 from serpapi import GoogleSearch
+from django.contrib.auth import authenticate, get_user_model
+from .serializers import RegisterSerializer, LoginSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
 
 DEEPL_URL = 'https://api-free.deepl.com/v2/translate'
 DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
@@ -120,22 +123,25 @@ def get_place_info(request):
         # SERP API 호출
         query = f"{name} {address}"
         params = {
-            "engine": "google_maps",
+            "engine": "google",
             "q": query,
             "type": "search",
             "google_domain": "google.co.kr",
             "hl": "ko",
+            "gl": "kr",
             "api_key": settings.SERPAPI_KEY
         }
 
         try:
             search = GoogleSearch(params)
             result = search.get_dict()
-            place_info = result.get("place_results", {})
-            reviews = place_info.get("reviews", [])
+
+            # 변경된 구조: place_info와 reviews 따로 추출
+            place_info = result.get("place_info", {})
+            reviews = result.get("reviews", [])
 
             # 한국어 후기만 추출하고 번역
-            korean_reviews = [r["text"] for r in reviews if re.search(r"[가-힣]", r.get("text", ""))]
+            korean_reviews = [r["snippet"] for r in reviews if re.search(r"[가-힣]", r.get("snippet", ""))]
             translated_reviews = [
                 deepl_translate(text, source_lang="KO", target_lang="EN")
                 for text in korean_reviews
@@ -148,8 +154,8 @@ def get_place_info(request):
                 title=place_info.get("title"),
                 category=place_info.get("type"),
                 description=place_info.get("description"),
-                menu_or_ticket_info=place_info.get("menu") if "menu" in place_info else place_info.get("attributes", {}),
-                price=place_info.get("price_level"),
+                menu_or_ticket_info=place_info.get("attributes", {}),
+                price=place_info.get("price"),
                 translated_reviews=translated_reviews,
             )
 
@@ -166,3 +172,39 @@ def get_place_info(request):
         except Exception as e:
             return Response({'error': str(e)}, status=500)
         
+
+User = get_user_model()
+
+@api_view(['POST'])
+def register(request):
+    serializer = RegisterSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({"message": "회원가입 성공!"})
+    return Response(serializer.errors, status=400)
+
+@api_view(['POST'])
+def login_view(request):
+    serializer = LoginSerializer(data=request.data)
+    if serializer.is_valid():
+        user = authenticate(
+            email=serializer.validated_data['email'],
+            password=serializer.validated_data['password']
+        )
+        if user:
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "message": "로그인 성공",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user_id": user.id,
+            })
+        return Response({"error": "이메일 또는 비밀번호가 틀렸습니다."}, status=400)
+    return Response(serializer.errors, status=400)
+
+@api_view(['POST'])
+def check_email_duplicate(request):
+    email = request.data.get('email')
+    if User.objects.filter(email=email).exists():
+        return Response({"exists": True})
+    return Response({"exists": False})

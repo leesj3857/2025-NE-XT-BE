@@ -26,7 +26,7 @@ DATABASES = {
         'PORT': os.getenv("DB_PORT"),
     }
 }
-
+AUTH_USER_MODEL = 'translation_api.User'
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 DEEPL_API_KEY = os.getenv("DEEPL_API_KEY")
 
@@ -68,3 +68,17 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "https://koreat.netlify.app",
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+# Optional: 토큰 유효기간 등 설정
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
