@@ -14,6 +14,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 import random
 from django.core.mail import EmailMultiAlternatives
 from django.utils import timezone
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+import secrets
 
 DEEPL_URL = 'https://api-free.deepl.com/v2/translate'
 DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
@@ -295,7 +299,7 @@ def send_password_reset_code(request):
         message = EmailMultiAlternatives(subject=subject, body='비밀번호 재설정 인증번호입니다.', to=[email])
         message.attach_alternative(body, "text/html")
         message.send()
-        return Response({'message': '비밀번호 재설정용 인증번호가 이메일로 전송되었습니다.'})
+        return Response({'message': '인증번호가 이메일로 전송되었습니다.'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -319,24 +323,39 @@ def verify_reset_code(request):
     if record.code != code:
         return Response({'error': '인증번호가 일치하지 않습니다.'}, status=400)
 
-    return Response({'message': '인증번호 확인 성공. 비밀번호를 재설정하세요.'})
+    # ✅ 토큰 생성 및 저장
+    one_time_token = secrets.token_urlsafe(32)
+    record.token = one_time_token
+    record.save()
+
+    return Response({'message': '인증 성공', 'token': one_time_token})
 
 # 3. 실제 비밀번호 변경 API
 @api_view(['POST'])
 def reset_password(request):
     email = request.data.get('email')
+    token = request.data.get('token')
     new_password = request.data.get('new_password')
 
-    if not all([email, new_password]):
-        return Response({'error': '이메일과 새 비밀번호를 입력해주세요.'}, status=400)
+    if not all([email, token, new_password]):
+        return Response({'error': '모든 정보를 입력해주세요.'}, status=400)
+
+    try:
+        record = EmailVerification.objects.filter(email=email, purpose='reset').latest('created_at')
+    except EmailVerification.DoesNotExist:
+        return Response({'error': '비밀번호 재설정 요청 기록이 없습니다.'}, status=404)
+
+    # ✅ 토큰 일치 여부 확인
+    if record.token != token:
+        return Response({'error': '유효하지 않은 토큰입니다.'}, status=400)
 
     try:
         user = User.objects.get(email=email)
         user.set_password(new_password)
         user.save()
 
-        # 인증 기록도 삭제
-        EmailVerification.objects.filter(email=email, purpose='reset').delete()
+        # ✅ 완료 후 인증 기록 삭제 (또는 token 필드만 삭제하고 레코드 남겨도 됨)
+        record.delete()
 
         return Response({'message': '비밀번호가 성공적으로 변경되었습니다.'})
     except User.DoesNotExist:

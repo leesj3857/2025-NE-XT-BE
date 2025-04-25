@@ -91,6 +91,7 @@ class EmailVerification(models.Model):
     email = models.EmailField()
     code = models.CharField(max_length=6)
     purpose = models.CharField(max_length=20)  # 'register' or 'reset'
+    token = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def is_expired(self):
