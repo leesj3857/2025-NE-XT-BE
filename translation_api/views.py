@@ -12,7 +12,7 @@ from django.contrib.auth import authenticate, get_user_model
 from .serializers import RegisterSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 import random
-from django.core.mail import EmailMessage
+from django.core.mail import EmailMultiAlternatives
 from django.utils import timezone
 
 DEEPL_URL = 'https://api-free.deepl.com/v2/translate'
@@ -218,23 +218,30 @@ def send_verification_code(request):
     if not email:
         return Response({'error': '이메일이 필요합니다.'}, status=400)
 
-    # 중복 이메일 검사
     if User.objects.filter(email=email).exists():
         return Response({'error': '이미 가입된 이메일입니다.'}, status=409)
 
     code = str(random.randint(100000, 999999))
 
-    # 기존 인증 요청이 있으면 삭제
     EmailVerification.objects.filter(email=email, purpose='register').delete()
-
-    # 인증 코드 새로 생성
     EmailVerification.objects.create(email=email, code=code, purpose='register')
 
-    subject = '[회원가입 인증] 이메일 인증번호입니다.'
-    body = f'인증번호: {code} (5분 내 입력)'
+    subject = '[KOREAT] 회원가입 인증번호 안내'
+    body = f"""
+    <html>
+        <body style="font-family: Arial; padding: 20px;">
+            <h2 style="color: #4CAF50;">KOREAT 회원가입 인증번호</h2>
+            <p>아래 인증번호를 5분 이내에 입력해주세요.</p>
+            <div style="font-size: 30px; font-weight: bold; margin: 20px 0;">{code}</div>
+            <p>감사합니다.</p>
+        </body>
+    </html>
+    """
 
     try:
-        EmailMessage(subject=subject, body=body, to=[email]).send()
+        message = EmailMultiAlternatives(subject=subject, body='회원가입 인증번호입니다.', to=[email])
+        message.attach_alternative(body, "text/html")
+        message.send()
         return Response({'message': '인증번호가 이메일로 전송되었습니다.'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
@@ -260,6 +267,7 @@ def verify_email_code(request):
 
     return Response({'message': '이메일 인증 성공!'})
 
+# 1. 비밀번호 재설정용 인증번호 전송
 @api_view(['POST'])
 def send_password_reset_code(request):
     email = request.data.get('email')
@@ -268,28 +276,37 @@ def send_password_reset_code(request):
 
     code = str(random.randint(100000, 999999))
 
-    # 기존 인증 요청 삭제
     EmailVerification.objects.filter(email=email, purpose='reset').delete()
-
     EmailVerification.objects.create(email=email, code=code, purpose='reset')
 
-    subject = '[비밀번호 재설정] 인증번호입니다.'
-    body = f'인증번호: {code} (5분 내 입력)'
+    subject = '[KOREAT] 비밀번호 재설정 인증번호 안내'
+    body = f"""
+    <html>
+        <body style="font-family: Arial; padding: 20px;">
+            <h2 style="color: #FF5722;">KOREAT 비밀번호 재설정 인증번호</h2>
+            <p>아래 인증번호를 5분 이내에 입력해주세요.</p>
+            <div style="font-size: 30px; font-weight: bold; margin: 20px 0;">{code}</div>
+            <p>감사합니다.</p>
+        </body>
+    </html>
+    """
 
     try:
-        EmailMessage(subject=subject, body=body, to=[email]).send()
+        message = EmailMultiAlternatives(subject=subject, body='비밀번호 재설정 인증번호입니다.', to=[email])
+        message.attach_alternative(body, "text/html")
+        message.send()
         return Response({'message': '비밀번호 재설정용 인증번호가 이메일로 전송되었습니다.'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
+# 2. 인증번호 인증만 하는 API
 @api_view(['POST'])
-def reset_password(request):
+def verify_reset_code(request):
     email = request.data.get('email')
     code = request.data.get('code')
-    new_password = request.data.get('new_password')
 
-    if not all([email, code, new_password]):
-        return Response({'error': '모든 정보를 입력해주세요.'}, status=400)
+    if not email or not code:
+        return Response({'error': '이메일과 인증번호를 입력해주세요.'}, status=400)
 
     try:
         record = EmailVerification.objects.filter(email=email, purpose='reset').latest('created_at')
@@ -302,13 +319,24 @@ def reset_password(request):
     if record.code != code:
         return Response({'error': '인증번호가 일치하지 않습니다.'}, status=400)
 
+    return Response({'message': '인증번호 확인 성공. 비밀번호를 재설정하세요.'})
+
+# 3. 실제 비밀번호 변경 API
+@api_view(['POST'])
+def reset_password(request):
+    email = request.data.get('email')
+    new_password = request.data.get('new_password')
+
+    if not all([email, new_password]):
+        return Response({'error': '이메일과 새 비밀번호를 입력해주세요.'}, status=400)
+
     try:
         user = User.objects.get(email=email)
         user.set_password(new_password)
         user.save()
 
-        # 성공 후 인증기록 삭제
-        record.delete()
+        # 인증 기록도 삭제
+        EmailVerification.objects.filter(email=email, purpose='reset').delete()
 
         return Response({'message': '비밀번호가 성공적으로 변경되었습니다.'})
     except User.DoesNotExist:

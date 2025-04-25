@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (translate_category, run_migrate, translate_region_to_korean, 
                     get_place_info, register, login_view, check_email_duplicate,
                     send_verification_code, verify_email_code,
-                    send_password_reset_code, reset_password)
+                    send_password_reset_code, verify_reset_code, reset_password)
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -23,5 +23,6 @@ urlpatterns = [
     path('email/send-code/', send_verification_code),
     path('email/verify-code/', verify_email_code),
     path('password/send-reset-code/', send_password_reset_code),
+    path('password/verify_reset_code/', send_password_reset_code),
     path('password/reset/', reset_password),
 ]
