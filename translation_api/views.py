@@ -20,7 +20,7 @@ def run_migrate(request):
         call_command('makemigrations', 'translation_api', interactive=False)
         
         # 2. 기존 테이블이 있을 경우 에러 없이 넘어가도록 fake_initial 사용
-        call_command('migrate', interactive=False, fake_initial=True)
+        call_command('migrate', interactive=False, fake=True)  # 강제 패스
         
         return Response({'message': 'Migration completed successfully'})
     except Exception as e:
