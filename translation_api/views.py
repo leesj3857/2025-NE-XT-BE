@@ -16,11 +16,16 @@ DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
 @api_view(['POST'])
 def run_migrate(request):
     try:
+        # 1. 새로운 마이그레이션 파일 생성
         call_command('makemigrations', 'translation_api', interactive=False)
-        call_command('migrate', interactive=False)
+        
+        # 2. 기존 테이블이 있을 경우 에러 없이 넘어가도록 fake_initial 사용
+        call_command('migrate', interactive=False, fake_initial=True)
+        
         return Response({'message': 'Migration completed successfully'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
     
 
 def deepl_translate(text: str, source_lang: str, target_lang: str) -> str:
