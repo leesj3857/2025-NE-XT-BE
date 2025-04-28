@@ -223,6 +223,7 @@ def login_view(request):
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
                 "user_id": user.id,
+                "name": user.name,
             })
         return Response({"error": "이메일 또는 비밀번호가 틀렸습니다."}, status=400)
     return Response(serializer.errors, status=400)
