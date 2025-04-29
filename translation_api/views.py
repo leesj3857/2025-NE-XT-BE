@@ -1,4 +1,4 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.core.management import call_command
 from django.conf import settings
@@ -18,6 +18,7 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 import secrets
+from rest_framework.permissions import IsAuthenticated
 
 DEEPL_URL = 'https://api-free.deepl.com/v2/translate'
 DEEPL_AUTH_KEY = settings.DEEPL_API_KEY
@@ -181,6 +182,7 @@ def get_place_info(request):
         
 
 User = get_user_model()
+EMAIL_REGEX = r'^[\w\.-]+@[\w\.-]+\.\w+$'
 
 @api_view(['POST'])
 def register(request):
@@ -191,22 +193,26 @@ def register(request):
 
     if not all([email, name, password, token]):
         return Response({'error': '모든 정보를 입력해주세요.'}, status=400)
+    if not re.match(EMAIL_REGEX, email):
+        return Response({'error': '이메일 형식이 올바르지 않습니다.'}, status=400)
 
+    if User.objects.filter(email=email).exists():
+        return Response({'error': '이미 해당 이메일로 가입된 계정이 존재합니다.'}, status=409)
+    
     try:
         record = EmailVerification.objects.filter(email=email, purpose='register').latest('created_at')
     except EmailVerification.DoesNotExist:
-        return Response({'error': '이메일 인증 기록이 없습니다.'}, status=404)
+        return Response({'error': '이메일 인증 요청 기록이 없습니다.'}, status=404)
 
     if record.token != token:
-        return Response({'error': '유효하지 않은 토큰입니다.'}, status=400)
+        return Response({'error': '유효하지 않은 인증 토큰입니다.'}, status=400)
 
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
-        # ✅ 회원가입 완료 후 인증 기록 삭제
         record.delete()
         return Response({"message": "회원가입 성공!"})
-    return Response(serializer.errors, status=400)
+    return Response({'error': '입력값이 올바르지 않습니다.', 'detail': serializer.errors}, status=400)
 
 @api_view(['POST'])
 def login_view(request):
@@ -225,14 +231,19 @@ def login_view(request):
                 "user_id": user.id,
             })
         return Response({"error": "이메일 또는 비밀번호가 틀렸습니다."}, status=400)
-    return Response(serializer.errors, status=400)
+    return Response({'error': '입력값이 올바르지 않습니다.', 'detail': serializer.errors}, status=400)
 
 @api_view(['POST'])
 def check_email_duplicate(request):
     email = request.data.get('email')
-    if User.objects.filter(email=email).exists():
-        return Response({"exists": True})
-    return Response({"exists": False})
+    if not email:
+        return Response({'error': '이메일을 입력해주세요.'}, status=400)
+
+    if not re.match(EMAIL_REGEX, email):
+        return Response({'error': '이메일 형식이 올바르지 않습니다.'}, status=400)
+
+    return Response({"exists": User.objects.filter(email=email).exists()})
+
 
 @api_view(['POST'])
 def send_verification_code(request):
@@ -240,8 +251,11 @@ def send_verification_code(request):
     if not email:
         return Response({'error': '이메일이 필요합니다.'}, status=400)
 
+    if not re.match(EMAIL_REGEX, email):
+        return Response({'error': '이메일 형식이 올바르지 않습니다.'}, status=400)
+
     if User.objects.filter(email=email).exists():
-        return Response({'error': '이미 가입된 이메일입니다.'}, status=409)
+        return Response({'error': '이미 해당 이메일로 가입된 계정이 존재합니다.'}, status=409)
 
     code = str(random.randint(100000, 999999))
 
@@ -266,7 +280,7 @@ def send_verification_code(request):
         message.send()
         return Response({'message': '인증번호가 이메일로 전송되었습니다.'})
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': f'이메일 전송 실패: {str(e)}'}, status=500)
 
 @api_view(['POST'])
 def verify_email_code(request):
@@ -298,6 +312,12 @@ def verify_email_code(request):
 @api_view(['POST'])
 def send_password_reset_code(request):
     email = request.data.get('email')
+    if not email:
+        return Response({'error': '이메일을 입력해주세요.'}, status=400)
+
+    if not re.match(EMAIL_REGEX, email):
+        return Response({'error': '이메일 형식이 올바르지 않습니다.'}, status=400)
+
     if not User.objects.filter(email=email).exists():
         return Response({'error': '해당 이메일로 가입된 사용자가 없습니다.'}, status=404)
 
@@ -324,8 +344,8 @@ def send_password_reset_code(request):
         message.send()
         return Response({'message': '인증번호가 이메일로 전송되었습니다.'})
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
-
+        return Response({'error': f'이메일 전송 실패: {str(e)}'}, status=500)
+    
 # 2. 인증번호 인증만 하는 API
 @api_view(['POST'])
 def verify_reset_code(request):
@@ -383,3 +403,27 @@ def reset_password(request):
         return Response({'message': '비밀번호가 성공적으로 변경되었습니다.'})
     except User.DoesNotExist:
         return Response({'error': '사용자를 찾을 수 없습니다.'}, status=404)
+    
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_username(request):
+    new_name = request.data.get('name')
+    
+    if not new_name:
+        return Response({'error': '변경할 이름을 입력해주세요.'}, status=400)
+
+    user = request.user
+    user.name = new_name
+    user.save()
+    
+    return Response({
+        'message': '이름이 성공적으로 변경되었습니다.',
+        'name': user.name
+    })
+    
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_account(request):
+    user = request.user
+    user.delete()
+    return Response({'message': '회원 탈퇴가 완료되었습니다.'})
